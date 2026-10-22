@@ -1,0 +1,13 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+infra/.build/
+crash.log
+
+# Python
+__pycache__/
+*.pyc
+infra/tfplan

@@ -1,0 +1,85 @@
+name: CI/CD
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  api-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m unittest discover -s api -v
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform -chdir=infra fmt -check -recursive
+      - run: terraform -chdir=infra init -backend=false -input=false
+      - run: terraform -chdir=infra validate
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint shell scripts
+        run: shellcheck docker/*.sh scripts/*.sh
+      - name: Build image
+        run: docker build -f docker/Dockerfile -t pocket-orrery:local .
+      - name: Smoke test the container
+        run: |
+          docker run -d --name orrery -p 8080:8080 -e API_URL=https://example.execute-api.us-east-1.amazonaws.com pocket-orrery:local
+          for i in $(seq 1 20); do curl -fsS http://localhost:8080/healthz && break; sleep 1; done
+          curl -fsS http://localhost:8080/ | grep -q "<title>Pocket Orrery</title>"
+          curl -fsS http://localhost:8080/config.js | grep -q "example.execute-api"
+          docker logs orrery
+      - name: Start a kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: pocket-orrery
+          config: k8s/kind/cluster.yaml
+      - name: Deploy to kind and wait for the rollout
+        run: |
+          kind load docker-image pocket-orrery:local --name pocket-orrery
+          kubectl apply -k k8s
+          kubectl -n pocket-orrery rollout status deployment/pocket-orrery --timeout=120s
+          curl -fsS http://localhost:30080/healthz
+
+  deploy:
+    # Runs only on main, and only once the AWS role exists (repo variable AWS_DEPLOY_ROLE_ARN).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AWS_DEPLOY_ROLE_ARN != ''
+    needs: [api-tests, terraform, container]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # lets GitHub prove who it is to AWS; no AWS keys are stored
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Upload site and refresh CloudFront
+        env:
+          SITE_BUCKET: ${{ vars.SITE_BUCKET }}
+          DISTRIBUTION_ID: ${{ vars.DISTRIBUTION_ID }}
+          API_URL: ${{ vars.API_URL }}
+        run: bash scripts/deploy-site.sh
+      - name: Push image to ECR
+        env:
+          ECR_REPOSITORY_URL: ${{ vars.ECR_REPOSITORY_URL }}
+        run: |
+          aws ecr get-login-password | docker login --username AWS --password-stdin "${ECR_REPOSITORY_URL%%/*}"
+          docker build -f docker/Dockerfile -t "$ECR_REPOSITORY_URL:${GITHUB_SHA::7}" -t "$ECR_REPOSITORY_URL:latest" .
+          docker push --all-tags "$ECR_REPOSITORY_URL"

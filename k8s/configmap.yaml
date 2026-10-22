@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pocket-orrery-config
+  namespace: pocket-orrery
+data:
+  # Paste `terraform -chdir=infra output -raw api_url` here to show live quiz stats. Empty = off.
+  API_URL: ""
