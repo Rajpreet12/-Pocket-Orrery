@@ -97,9 +97,3 @@ GitHub signs in to AWS with OIDC, so no AWS keys are stored in GitHub. That role
 - The Lambda role can only `Scan` and `UpdateItem` on its one table and write its own logs.
 - The API accepts only the 8 planet names, bodies up to 1 KB, and browser calls from the site's own origin.
 - Containers run as uid 101 with no Linux capabilities and no privilege escalation.
-
-## Next steps
-
-- Move Terraform state to an S3 backend so it isn't only on one laptop.
-- Add a custom domain with Route 53 and ACM (about $12/year for the domain).
-- Run the same Kubernetes manifests on k3s on a small EC2 instance (about $8–15/month).
