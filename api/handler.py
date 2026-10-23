@@ -13,17 +13,18 @@ import base64
 import json
 import os
 
-import boto3
-
 PLANETS = ("mercury", "venus", "earth", "mars", "jupiter", "saturn", "uranus", "neptune")
 
 _table = None
 
 
 def table():
-    # Created lazily so tests can swap in a fake before the first call.
+    # Created lazily so tests can swap in a fake before the first call. boto3 is
+    # imported here too: Lambda ships it, but the unit tests never need it.
     global _table
     if _table is None:
+        import boto3
+
         _table = boto3.resource("dynamodb").Table(os.environ["TABLE_NAME"])
     return _table
 
