@@ -12,7 +12,7 @@ jobs:
   api-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -21,7 +21,7 @@ jobs:
   terraform:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: hashicorp/setup-terraform@v3
       - run: terraform -chdir=infra fmt -check -recursive
       - run: terraform -chdir=infra init -backend=false -input=false
@@ -30,7 +30,7 @@ jobs:
   container:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Lint shell scripts
         run: shellcheck docker/*.sh scripts/*.sh
       - name: Build image
@@ -52,7 +52,8 @@ jobs:
           kind load docker-image pocket-orrery:local --name pocket-orrery
           kubectl apply -k k8s
           kubectl -n pocket-orrery rollout status deployment/pocket-orrery --timeout=120s
-          curl -fsS http://localhost:30080/healthz
+          # The NodePort can lag a few seconds behind ready pods, so retry instead of failing on the first reset.
+          curl -fsS --retry 15 --retry-delay 2 --retry-all-errors http://localhost:30080/healthz
 
   deploy:
     # Runs only on main, and only once the AWS role exists (repo variable AWS_DEPLOY_ROLE_ARN).
@@ -65,7 +66,7 @@ jobs:
     env:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
